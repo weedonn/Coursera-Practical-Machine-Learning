@@ -1,7 +1,7 @@
 ---
 title: "Practical Machine Learning - Course Project"
 author: "Nigel Weedon"
-date: "17 November 2015"
+date: "20 November 2015"
 output: html_document
 ---
 
@@ -19,7 +19,7 @@ Using devices such as **_Jawbone Up_**, **_Nike FuelBand_**, and **_Fitbit_** it
 # Methodology  
 The goal of the project is to predict the manner in which each of the 6 participants, mentioned in the **Background** above, did their exercise.  
 This is defined by the target variable "classe" in the training dataset.  
-We first explore and analyse the training data provided using the R package/tool rattle(). We also load the training data set into Microsoft Excel to home in on specific data.  
+We first explore and analyse the training data provided using the R package/tool rattle(). We also load the training data set into Microsoft Excel to home in on and analyse specific feature or predictor data.  
 Based on this analysis, we cleans the data by removing whole columns of NULL data. Depending on the volume of other missing data and their location, we can impute these values and/or only retain **complete.cases**. This is where rows of data are removed if there is any missing data in the row.  
 After cleansing the data we look at other techniques to reduce the number of predictors, such as identifying "near-zero-variance" predictors and "variable importance" of each predictor.  
 Since the target variable is a categorical with 5 levels (A,B,C,D,E), we choose 2 model algorithms, "Random Forest(rf)" and the clustering algorithm "K-Nearest Neighbour(knn)" to train and compare models.  
@@ -42,15 +42,11 @@ The data for this course project comes from this source: [Human Activity Recogni
 
 # Building the Model  
 ## Setup the environment  
-```{r}
-## Set the working directory.
-setwd("C:\\Users\\Nigel\\Documents\\Coursera\\Practical Machine Learning - Johns Hopkins\\Assignments\\Course_Project")
+```{r Setup_the_environment}
 ## Clear the workspace.
 rm(list=ls())
 ## Load the required packages.
 library("caret")
-library("randomForest")
-library("plyr")
 library("rattle")
 #rattle()
 # Set the random seed.
@@ -68,7 +64,7 @@ pml_write_files = function(x){
 The initial data analysis was performed via rattle(), which provides a GUI to explore the data and generates a huge number of statistics.  
 We look at the data types (identity,categoric,numeric,target), unique values (levels), number and percentage of missing values, skewness of the data in each column and if there are any outliers (mean substantially different to median).
 This analysis highlighted a huge number of "missing" observations and the occurance of "#DIV/0!" which we also interpret as a missing value.  
-```{r}
+```{r Data_Exploration}
 # R Code courtesy of rattle()
 crs$datasetUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
 crs$dataset <- read.csv(url(crs$datasetUrl), na.strings=c(".", "NA", "", "?", "#DIV/0!"), strip.white=TRUE, encoding="UTF-8")
@@ -167,7 +163,7 @@ crs$weights <- NULL
 ```  
 
 ## Summary of the Dataset  
-```{r}
+```{r Summary_of_the_Dataset}
 # The 'Hmisc' package provides the 'contents' function.
 library(Hmisc, quietly=TRUE)
 # Obtain a summary of the dataset.
@@ -179,29 +175,31 @@ contents(crs$dataset[crs$sample, c(crs$input, crs$risk, crs$target)])
 ## Skewness of the Dataset  
 NOTE: Skewness for each numeric variable of the dataset.  
 Positive means the right tail is longer.  
-```{r}
+```{r Skewness_of_the_Dataset}
 # The 'skewness' package provides the 'fBasics' function.
 library(fBasics, quietly=TRUE)
 # Summarise the skewness of the numeric data.
 
 skewness(crs$dataset[crs$sample, c(crs$input, crs$risk, crs$target)][,c(2:3, 6:10, 15:16, 18:19, 21:22, 24:65, 72:83, 88:89, 91:92, 94:95, 97:119, 124:125, 127:128, 130:131, 133:152)], na.rm=TRUE)
+
+rm(crs)  
+
 ```  
 
 ## Load the Training and Testing datasets  
-```{r}
+```{r Load_Datasets}
 pml_training_Url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
 pml_training <- read.csv(url(pml_training_Url), na.strings=c("NA","#DIV/0!",""))
-# Remove the first 2 columns which contain Identity and Categorical features, which are not predictive.
-pml_training <- pml_training[, -c(1:2)]
+# Remove the first 7 columns which contain Identity, Date/Time and Categorical features, which may not be predictive.
+pml_training <- pml_training[, -c(1:7)]
 # Discard the columns where there is < 95% observations, based on percentage missing from data analysis.
 sum(colSums(!is.na(pml_training)) < nrow(pml_training) * 0.95) #columns with more than 95% data missing
 cols2Keep <- c(colSums(!is.na(pml_training)) >= nrow(pml_training) * 0.95)
 pml_training   <-  pml_training[,cols2Keep]
 ```  
 ## Identify "near-zero-variance" predictors.  
-After removing columns with null data, only one other column was identified for removal (new_window).  
-Later model tuning found this column added additional accuracy, so was not removed in the final model training.  
-```{r}
+After removing columns with a large percentage of null data, there were no near-zero-variance columns identified for removal.  
+```{r Near_Zero_Variance}
 # These predictors may have an undue influence on the model and should be eliminated prior to modeling.
 nzv2Remove <- nearZeroVar(pml_training, saveMetrics= TRUE)
 nzv2Remove
@@ -209,11 +207,11 @@ nzv2Remove
 #pml_training <- pml_training[, nzv2Remove$nzv==FALSE]
 ```  
 ## Apply the same data cleansing to the testing data set  
-```{r}
+```{r Cleansing_Testing_Dataset}
 pml_testing_Url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
 pml_testing <- read.csv(url(pml_testing_Url), na.strings=c("NA","#DIV/0!",""))
-# Remove the first 2 columns which contain Identity and Categorical features, which are not predictive.
-pml_testing <- pml_testing[ , -c(1:2)]
+# Remove the first 7 columns which contain Identity, Date/Time and Categorical features, which may not be predictive.
+pml_testing <- pml_testing[ , -c(1:7)]
 # Discard the columns where there is < 95% observations
 pml_testing <- pml_testing[,cols2Keep]
 # Identify and remove "near-zero-variance" predictors.
@@ -221,106 +219,100 @@ pml_testing <- pml_testing[,cols2Keep]
 ```
 
 ## Verify column names  
-```{r}
+```{r Verify_Column_Names}
 # Verify that the column names in the training and test sets are identical, excluding the classe and problem_id columns.
 colnames(pml_training)
 colnames(pml_testing)
 ```  
-## Partioning Training data set  
-```{r}
-# Partioning the Training data set into two data sets, 70% for training, 30% for validation(testing)
+## Partitioning Training data set  
+```{r Partition_Training_Dataset}
+# Partitioning the Training data set into two data sets, 70% for training, 30% for validation(testing)
 inTrain <- createDataPartition(pml_training$classe, p=0.7, list=FALSE)
 training <- pml_training[inTrain, ]
 testing <- pml_training[-inTrain, ]
 ```  
 ## Estimate Out-of-Sample Error  
 We can use a small sample of the training data set to estimate the expected out-of-sample error.  
-This sample gives an OOB estimate of error rate of 1.31%.  
+The randomForest algorithm performs inherent Cross Validation, but we explicitly specify Cross Validation(cv) to calculate an estimate for the out-of-sample error.
+This sample gives an OOB estimate of error rate of 4.25%.  
 As a rule of thumb, the more data we train with the better the predictive accuracy of the model.  
-So we would expect that training a model on the full training data set will produce an Out-of-Sample error rate  substantially better than 1.31%.  
-```{r}
+So we would expect that training a model on the full training data set will produce an Out-of-Sample error rate  substantially better than 4.25%.  
+```{r Estimate_Out_of_Sample_Error}
 # Partioning the training data set again into a 20% sample data set to estimate the OOB of the final model.
 inSample <- createDataPartition(training$classe, p=0.2, list=FALSE)
 OOBtraining <- training[inSample, ]
-rfOOBModel <- randomForest(OOBtraining$classe ~.,data=OOBtraining)
+rfOOBModel <- train(OOBtraining$classe ~ ., method="rf", data=OOBtraining,  trControl=trainControl(method="cv"), prox=TRUE, allowParallel=TRUE, importance = TRUE)
 # Output of randomForest sample model
 rfOOBModel
+rfOOBModel$finalModel  
+
 ```  
-## Train the randomForest model - Cross Validation  
-Now we train a model on the full training data set.  
-The randomForest algorithm performs inherent Cross Validation to calculate the out-of-sample error.
-```{r}
-randomForestModel <- randomForest(training$classe ~.,data=training, importance = TRUE)
-# Output of randomForest trained model
-randomForestModel
-randomForestPredict <- predict(randomForestModel,testing)
-randomForestConfMatrix <- confusionMatrix(randomForestPredict, testing$classe)
-randomForestConfMatrix
-```
 
 ## Variable Importance Analysis of Random Forest Model  
-The Variable Importance plots below confirms the decision to include the predictor columns 3-7 in the data for modelling. These date/time predictors were initially removed, but model tuning found these predictors increased the accuracy and reduced the out-of-sample error rate.
-```{r echo=FALSE}
-varImpPlot(randomForestModel)  
+The Variable Importance plots show the top 15 features.
+```{r Variable_Importance_Analysis}
+rfImportance <- varImp(rfOOBModel,scale=FALSE) # for train(method="rf")  
+print(rfImportance$importance)  
+plot(rfImportance, top = 15)  
   
 ```  
 
+## Train the randomForest model - Cross Validation  
+Now we train a model on the full training data set.  
+We found that in previous model training runs that preprocessing the data to normalise the data(preProcess = c("center","scale")) did not affect the accuracy of the final model. Also repeated cross-validation affected the number of variables per level(mtry) used, but again this did not substantially affect the accuracy of the final model.
+```{r Train_RandomForest}
+randomForestModel <- train(training$classe ~ ., method="rf", data=training,  trControl=trainControl(method="cv"), prox=TRUE, allowParallel=TRUE, importance = TRUE)
+# Output of randomForest trained model
+randomForestModel
+# Output of randomForest last model
+randomForestModel$finalModel  
+
+randomForestPredict <- predict(randomForestModel,testing)
+randomForestConfMatrix <- confusionMatrix(randomForestPredict, testing$classe)
+randomForestConfMatrix  
+
+```
+
 ## Train the K-Nearest Neighbour Model - Cross Validation  
-The K-Nearest Neighbour algorithm performs inherent Cross Validation to calculate the out-of-sample error.
-In this case Resampling: Cross-Validated (10 fold, repeated 5 times)  
-```{r}
+In the K-Nearest Neighbour algorithm specify Cross Validation in the trainControl parameter to calculate the out-of-sample error.
+In this case Resampling: Cross-Validated (10 fold).  
+We also pre-process the data ("center","scale") to normalise the data.  
+```{r Train_K_Nearest_Neighbour}
 # K-Nearest Neighbour Analysis(knn)
 # knn requires variables to be normalized or scaled.
-KNNctrl = trainControl(method="repeatedcv",repeats = 5)
+KNNctrl = trainControl(method="cv")
 KNNmod = train(training$classe ~ ., data=training, method = "knn", trControl = KNNctrl, preProcess = c("center","scale"))
 # Output of knn trained model
-KNNmod
+KNNmod  
+
 ```
 Plot Number of Neighbours Vs accuracy  
-Plotting yields the Number of Neighbours Vs accuracy, based on repeated cross validation.  
-```{r echo=FALSE}
+Plotting yields the Number of Neighbours Vs accuracy, based on the cross validation.  
+```{r Plot_Neighbours_Vs_Accuracy, echo=FALSE}
 plot(KNNmod)
   
 ```  
 
 Predict the Testing data set using the K-Nearest Neighbour Model  
-```{r}
+```{r Predict_Testing_Datase_KNN_Model}
 KNNpred <- predict(KNNmod,testing)
 KNNConfMatrix <- confusionMatrix(KNNpred, testing$classe)
-KNNConfMatrix
+KNNConfMatrix  
+
 ```  
 
 ## Conclusion  
-The Random Forest model produced the best results with an OOB error rate of 0.15% and Accuracy of 99.93%.  
-While the K-Nearest Neighbour model produced an Accuracy of 97.55%.  
-Initilal data analysis deemed that the first 7 columns of the data set would not add any predictive value to the models as they were identity, categorical or date/time variables. During model tuning itrations these predictors were added back into the model training dataset which proved to give a significant improvement in accuracy. The final model only excluded the first 2 columns which were the identity(X) and the categorical(user_name) columns.  
+The Random Forest model produced the best results with an OOB error rate of 0.68% and Accuracy of 99.44%.  
+While the K-Nearest Neighbour model produced an Accuracy of 96.99%.  
+The Random Forest model consistently out performed the K-Nearest Neighbour Model in all tunning exercises.  
 
 ## Generate the predicted answers  
-```{r}
-# The predict() on the final answers pml_testing set failed because the randomForest() function
-# has a bug that can only be fixed by merging the levels of the training and pml_testing sets factors.
-# See http://stats.stackexchange.com/questions/29446/random-forest-and-new-factor-levels-in-test-set
-# Exclude "classe" target factor (last column)..
-
-for(attr in colnames(training[,-ncol(training)])) 
-{
-        if (is.factor(training[[attr]]))
-        {
-                new.levels <- setdiff(levels(training[[attr]]), levels(pml_testing[[attr]]))
-                if ( length(new.levels) == 0 )
-                        { print(paste('Factor: ',attr, ' has no new levels.')) }
-                else
-                {
-                        print(c(paste('Factor: ',attr, ' has ', length(new.levels), ' new level(s), e.g.'), head(new.levels, 2)))
-                        levels(pml_testing[[attr]]) <- union(levels(pml_testing[[attr]]), levels(training[[attr]]))
-                }
-        }
-}  
-
-predictedAnswers <- predict(randomForestModel,newdata=pml_testing) # Best predictions
-#predictedAnswers <- predict(KNNmod,newdata=pml_testing)
-```  
-Generate the 20 prediction files to submit  
-```{r}
+Generate the 20 prediction files to submit as answers.  
+```{r Generate_Predicted_Answers}  
+predictedAnswers <- predict(randomForestModel,newdata=pml_testing) # Best predictions  
+#predictedAnswers <- predict(KNNmod,newdata=pml_testing)  
+#predictedAnswers  
+saveRDS(predictedAnswers, file="predictedAnswers.rds")
+#predictedAnswers <- readRDS("predictedAnswers.rds")
 pml_write_files(predictedAnswers)
 ```
